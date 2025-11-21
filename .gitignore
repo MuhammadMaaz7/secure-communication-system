@@ -1,0 +1,22 @@
+# Node
+node_modules/
+dist/
+build/
+.env
+.DS_Store
+
+# Vite / React
+node_modules/
+dist/
+.env.local
+.vite
+coverage/
+
+# Local DB / OS
+*.sqlite
+*.db
+*.log
+
+# Editor
+.vscode/
+.idea/
