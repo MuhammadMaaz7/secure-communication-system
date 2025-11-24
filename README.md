@@ -4,7 +4,7 @@ A secure, real-time chat application with end-to-end encryption, built with Reac
 
 ---
 
-## 🔐 Security Features
+## Security Features
 
 - **End-to-End Encryption (E2EE)** - Messages encrypted client-side with AES-256-GCM
 - **Custom Key Exchange Protocol** - ECDH + Digital Signatures for secure key establishment
@@ -15,7 +15,7 @@ A secure, real-time chat application with end-to-end encryption, built with Reac
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [Prerequisites](#prerequisites)
 2. [Installation](#installation)
@@ -29,7 +29,7 @@ A secure, real-time chat application with end-to-end encryption, built with Reac
 
 ---
 
-## 🔧 Prerequisites
+## Prerequisites
 
 Before you begin, ensure you have the following installed:
 
@@ -48,13 +48,13 @@ mongod --version  # Should show v5.x.x or higher
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <your-repository-url>
-cd e2ee-chat-app
+git clone https://github.com/MuhammadMaaz7/secure-communication-system.git
+cd secure-communication-system
 ```
 
 ### Step 2: Install Backend Dependencies
@@ -89,7 +89,7 @@ npm install
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Step 1: Set Up MongoDB
 
@@ -109,12 +109,6 @@ npm install
    mongosh
    # Should connect successfully
    ```
-
-**Option B: MongoDB Atlas (Cloud)**
-
-1. Create account at [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
-2. Create a free cluster
-3. Get connection string (looks like: `mongodb+srv://username:password@cluster.mongodb.net/`)
 
 ### Step 2: Configure Backend Environment
 
@@ -152,11 +146,6 @@ npm install
 
 **Important:** Change `JWT_SECRET` to a random, secure string in production!
 
-**Generate a secure JWT secret:**
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
 ### Step 3: Configure Frontend Environment
 
 1. Navigate to frontend folder:
@@ -181,14 +170,14 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ---
 
-## 🚀 Running the Application
+## Running the Application
 
 ### Method 1: Run Both Servers Separately (Recommended for Development)
 
 **Terminal 1 - Backend:**
 ```bash
 cd backend
-npm start
+npm run dev
 ```
 
 You should see:
@@ -211,18 +200,6 @@ VITE v5.x.x  ready in xxx ms
 ➜  Network: use --host to expose
 ```
 
-### Method 2: Run with npm scripts (from root)
-
-If you have a root `package.json` with scripts:
-
-```bash
-# Install all dependencies
-npm run install:all
-
-# Run both servers
-npm run dev
-```
-
 ### Verify Everything is Running:
 
 1. **Backend:** Open http://localhost:5000 in browser
@@ -236,7 +213,7 @@ npm run dev
 
 ---
 
-## 👤 Using the Application
+## Using the Application
 
 ### First Time Setup
 
@@ -296,7 +273,7 @@ npm run dev
 
 ---
 
-## 🔒 Security Architecture
+## Security Architecture
 
 ### Cryptographic Protocols
 
@@ -314,18 +291,18 @@ User Registration
 
 ```
 Initiator (Alice)                    Responder (Bob)
-    │                                      │
+    │                                     │
     │  1. Generate ephemeral ECDH key     │
     │  2. Sign public key with ECDSA      │
     │  3. Send to server                  │
     ├──────────────────────────────────>  │
-    │                                      │
-    │                                      │  4. Verify signature
-    │                                      │  5. Generate ECDH key
-    │                                      │  6. Sign public key
-    │                                      │  7. Derive shared secret
+    │                                     │
+    │                                     │  4. Verify signature
+    │                                     │  5. Generate ECDH key
+    │                                     │  6. Sign public key
+    │                                     │  7. Derive shared secret
     │  <──────────────────────────────────┤
-    │                                      │
+    │                                     │
     │  8. Verify signature                │
     │  9. Derive shared secret            │
     │ 10. Both derive session key (HKDF)  │
@@ -374,7 +351,7 @@ Sent to Server (server cannot decrypt)
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Manual Testing Scenarios
 
@@ -400,7 +377,7 @@ Sent to Server (server cannot decrypt)
 
 #### Test 3: File Sharing
 
-1. Alice clicks "📎 Attach File"
+1. Alice clicks "Attach File"
 2. Select a file (image, PDF, etc.)
 3. Click "Upload"
 4. Bob sees file notification
@@ -438,150 +415,7 @@ cd frontend
 npm test
 ```
 
-### Security Testing
-
-#### Test Replay Attack Protection:
-
-```bash
-cd attack-demos
-node replay_attack_demo.js
-```
-
-**Expected output:**
-```
-✓ Nonce replay blocked
-✓ Sequence number replay blocked
-✓ Timestamp replay blocked
-```
-
-#### Test MITM Attack Prevention:
-
-```bash
-cd attack-demos
-node mitm_attack_demo.js
-```
-
-**Expected output:**
-```
-✓ Invalid signature detected
-✓ MITM attack prevented
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Common Issues and Solutions
-
-#### Issue 1: "Cannot connect to MongoDB"
-
-**Error:**
-```
-MongooseServerSelectionError: connect ECONNREFUSED 127.0.0.1:27017
-```
-
-**Solution:**
-1. Check if MongoDB is running:
-   ```bash
-   # Windows
-   net start MongoDB
-   
-   # macOS/Linux
-   sudo systemctl status mongod
-   ```
-
-2. Verify connection string in `backend/.env`:
-   ```env
-   MONGODB_URI=mongodb://localhost:27017/e2ee_chat
-   ```
-
-3. Try connecting with mongosh:
-   ```bash
-   mongosh
-   ```
-
-#### Issue 2: "Port 5000 already in use"
-
-**Error:**
-```
-Error: listen EADDRINUSE: address already in use :::5000
-```
-
-**Solution:**
-
-**Option A:** Kill the process using port 5000
-```bash
-# Windows
-netstat -ano | findstr :5000
-taskkill /PID <PID> /F
-
-# macOS/Linux
-lsof -ti:5000 | xargs kill -9
-```
-
-**Option B:** Change the port in `backend/.env`
-```env
-PORT=5001
-```
-
-And update `frontend/.env`:
-```env
-VITE_API_URL=http://localhost:5001
-VITE_SOCKET_URL=http://localhost:5001
-```
-
-#### Issue 3: "Keys already exist on this device"
-
-**Error when registering:**
-```
-Keys already exist on this device. Please logout first.
-```
-
-**Solution:**
-1. Make sure you're logged out
-2. If still seeing error, clear browser data:
-   - Open DevTools (F12)
-   - Application → IndexedDB → E2EE_KeyStore → Delete
-   - Refresh page
-
-#### Issue 4: "[Decryption failed]" messages
-
-**Cause:** Trying to decrypt messages encrypted with different session key
-
-**Solution:**
-1. This is normal for old messages from different users
-2. To start fresh, clear database:
-   ```bash
-   cd backend
-   node clear-messages.js
-   ```
-
-#### Issue 5: "WebSocket connection failed"
-
-**Error in console:**
-```
-WebSocket connection to 'ws://localhost:5000' failed
-```
-
-**Solution:**
-1. Check backend is running
-2. Verify `VITE_SOCKET_URL` in `frontend/.env`
-3. Check CORS settings in `backend/index.js`
-
-#### Issue 6: "JWT token expired"
-
-**Error:**
-```
-401 Unauthorized: Token expired
-```
-
-**Solution:**
-1. Logout and login again
-2. Token expires after 24 hours (configurable in `backend/routes/auth.js`)
-
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 e2ee-chat-app/
@@ -609,7 +443,7 @@ e2ee-chat-app/
 │   ├── .env                      # Environment variables
 │   ├── index.js                  # Server entry point
 │   ├── package.json              # Dependencies
-│   └── clear-messages.js         # Database cleanup script
+│   
 │
 ├── frontend/                     # React frontend
 │   ├── src/
@@ -634,94 +468,12 @@ e2ee-chat-app/
 │   ├── package.json              # Dependencies
 │   └── vite.config.js            # Vite configuration
 │
-├── attack-demos/                 # Security demonstrations
-│   ├── replay_attack_demo.js    # Replay attack test
-│   └── mitm_attack_demo.js      # MITM attack test
-│
-├── docs/                         # Documentation
-│   ├── COMPREHENSIVE_AUDIT_REPORT.md
-│   ├── FINAL_COMPLIANCE_REPORT.md
-│   ├── SECURITY_ANALYSIS.md
-│   ├── TESTING_GUIDE.md
-│   └── ...
-│
 └── README.md                     # This file
 ```
 
 ---
 
-## 🔍 Viewing Security Logs
-
-### Real-Time Log Monitoring
-
-**Terminal 1 - View all logs:**
-```bash
-cd backend
-tail -f logs/combined.log
-```
-
-**Terminal 2 - View errors only:**
-```bash
-cd backend
-tail -f logs/error.log
-```
-
-### Log Examples
-
-**Authentication Success:**
-```json
-{
-  "level": "info",
-  "message": "AUTHENTICATION SUCCESS: User logged in - username=alice, userId=6924a5b3",
-  "timestamp": "2025-11-24T18:30:00.000Z"
-}
-```
-
-**Replay Attack Detected:**
-```json
-{
-  "level": "warn",
-  "message": "REPLAY ATTACK DETECTED: Duplicate nonce MTc2NDAw... from 6924a5b3",
-  "timestamp": "2025-11-24T18:30:15.000Z"
-}
-```
-
-**Key Exchange Completed:**
-```json
-{
-  "level": "info",
-  "message": "Key exchange completed: session=80282daa, responder=6924a5c4",
-  "timestamp": "2025-11-24T18:30:30.000Z"
-}
-```
-
----
-
-## 🎓 Learning Resources
-
-### Understanding the Code
-
-1. **Start with:** `frontend/src/utils/crypto.js`
-   - See how encryption works
-
-2. **Then read:** `frontend/src/services/keyExchange.js`
-   - Understand key exchange protocol
-
-3. **Finally check:** `backend/routes/messages.js`
-   - See replay attack protection
-
-### Cryptography Concepts
-
-- **AES-GCM:** Authenticated encryption
-- **ECDH:** Key agreement protocol
-- **ECDSA:** Digital signatures
-- **HKDF:** Key derivation function
-- **Nonces:** Number used once
-- **Forward Secrecy:** Past sessions secure even if keys compromised
-
----
-
-## 📝 Development Tips
+## Development Tips
 
 ### Adding New Features
 
@@ -735,73 +487,22 @@ tail -f logs/error.log
    - Add service in `frontend/src/services/`
    - Use `AuthContext` for user state
 
-### Best Practices
-
-- ✅ Always log security events
-- ✅ Never store private keys on server
-- ✅ Always verify signatures
-- ✅ Always use fresh IVs for encryption
-- ✅ Always check nonces, sequences, timestamps
-- ✅ Always handle errors gracefully
 
 ---
 
-## 🚀 Production Deployment
-
-### Before Deploying:
-
-1. **Change JWT_SECRET** to a strong random value
-2. **Use MongoDB Atlas** instead of local MongoDB
-3. **Enable HTTPS** for both frontend and backend
-4. **Set NODE_ENV=production** in backend
-5. **Update CORS settings** to allow only your domain
-6. **Set up proper logging** (e.g., CloudWatch, Papertrail)
-7. **Enable rate limiting** to prevent abuse
-8. **Set up monitoring** (e.g., PM2, New Relic)
-
-### Environment Variables for Production:
-
-**Backend:**
-```env
-NODE_ENV=production
-PORT=5000
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/e2ee_chat
-JWT_SECRET=<64-character-random-string>
-FRONTEND_URL=https://your-domain.com
-```
-
-**Frontend:**
-```env
-VITE_API_URL=https://api.your-domain.com
-VITE_SOCKET_URL=https://api.your-domain.com
-```
-
----
-
-## 📄 License
+## License
 
 This project is for educational purposes. See LICENSE file for details.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 This is an academic project. For questions or issues, please contact the project team.
 
 ---
 
-## 📞 Support
-
-If you encounter issues:
-
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review the logs in `backend/logs/`
-3. Check browser console for errors (F12)
-4. Verify all environment variables are set correctly
-
----
-
-## ✅ Quick Start Checklist
+## Quick Start Checklist
 
 - [ ] Node.js installed (v16+)
 - [ ] MongoDB installed and running
@@ -817,9 +518,3 @@ If you encounter issues:
 - [ ] Can view security logs
 
 ---
-
-**🎉 You're all set! Start chatting securely!**
-
-For detailed security analysis, see `COMPREHENSIVE_AUDIT_REPORT.md`  
-For testing guide, see `TESTING_GUIDE.md`  
-For security logs, see `FINAL_COMPLIANCE_REPORT.md`
