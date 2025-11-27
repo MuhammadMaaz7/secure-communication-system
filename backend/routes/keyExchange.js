@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const KeyExchange = require('../models/KeyExchange');
 const authMiddleware = require('../middleware/auth');
 const logger = require('../utils/logger');
+const mongoose = require('mongoose');
 
 const router = express.Router();
 
@@ -221,6 +222,124 @@ router.delete('/cleanup', authMiddleware, async (req, res) => {
   } catch (error) {
     logger.error('Error cleaning up key exchanges:', error);
     res.status(500).json({ error: 'Failed to cleanup key exchanges' });
+  }
+});
+
+// ============================================================================
+// VULNERABLE ENDPOINTS - FOR DEMONSTRATION PURPOSES ONLY
+// ============================================================================
+// WARNING: These endpoints DO NOT verify signatures and are vulnerable to MITM attacks
+// They are used ONLY for demonstrating the importance of signature verification
+// DO NOT USE IN PRODUCTION
+// ============================================================================
+
+router.post('/vulnerable/initiate', async (req, res) => {
+  try {
+    const { responderId, publicKey, timestamp } = req.body;
+
+    logger.warn('⚠️  VULNERABLE ENDPOINT CALLED: /api/key-exchange/vulnerable/initiate');
+    logger.warn('⚠️  THIS ENDPOINT IS FOR DEMO ONLY - NO SIGNATURE VERIFICATION');
+    logger.warn('⚠️  SUSCEPTIBLE TO MAN-IN-THE-MIDDLE ATTACKS');
+
+    if (!responderId || !publicKey || !timestamp) {
+      logger.warn('Vulnerable key exchange initiation failed: Missing fields');
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Validate timestamp (but no signature verification!)
+    const now = Date.now();
+    const messageTime = parseInt(timestamp);
+    const maxAge = 5 * 60 * 1000; // 5 minutes
+
+    if (Math.abs(now - messageTime) > maxAge) {
+      logger.warn(`Vulnerable key exchange initiation failed: Stale timestamp, age: ${Math.abs(now - messageTime)}ms`);
+      return res.status(400).json({ error: 'Timestamp too old' });
+    }
+
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    const keyExchange = new KeyExchange({
+      initiatorId: new mongoose.Types.ObjectId(), 
+      responderId: new mongoose.Types.ObjectId(), 
+      initiatorPublicKey: publicKey,
+      initiatorSignature: 'VULNERABLE-NO-SIGNATURE',
+      sessionId,
+      expiresAt,
+      status: 'pending'
+    });
+
+    await keyExchange.save();
+
+    logger.warn(`⚠️  VULNERABLE key exchange initiated: session=${sessionId}, responder=${responderId}`);
+    logger.warn('⚠️  NO SIGNATURE VERIFICATION - ATTACKER CAN REPLACE PUBLIC KEY');
+
+    res.status(201).json({
+      message: 'Vulnerable key exchange initiated (DEMO ONLY)',
+      sessionId,
+      expiresAt
+    });
+  } catch (error) {
+    logger.error('Error in vulnerable key exchange initiation:', error);
+    res.status(500).json({ error: 'Failed to initiate vulnerable key exchange' });
+  }
+});
+
+router.post('/vulnerable/respond', async (req, res) => {
+  try {
+    const { sessionId, publicKey, timestamp } = req.body;
+
+    logger.warn('⚠️  VULNERABLE ENDPOINT CALLED: /api/key-exchange/vulnerable/respond');
+    logger.warn('⚠️  THIS ENDPOINT IS FOR DEMO ONLY - NO SIGNATURE VERIFICATION');
+    logger.warn('⚠️  SUSCEPTIBLE TO MAN-IN-THE-MIDDLE ATTACKS');
+
+    if (!sessionId || !publicKey || !timestamp) {
+      logger.warn('Vulnerable key exchange response failed: Missing fields');
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Validate timestamp (but no signature verification!)
+    const now = Date.now();
+    const messageTime = parseInt(timestamp);
+    const maxAge = 5 * 60 * 1000;
+
+    if (Math.abs(now - messageTime) > maxAge) {
+      logger.warn('Vulnerable key exchange response failed: Stale timestamp');
+      return res.status(400).json({ error: 'Timestamp too old' });
+    }
+
+    const keyExchange = await KeyExchange.findOne({
+      sessionId,
+      status: 'pending'
+    });
+
+    if (!keyExchange) {
+      logger.warn(`Vulnerable key exchange response failed: Session not found ${sessionId}`);
+      return res.status(404).json({ error: 'Key exchange session not found or expired' });
+    }
+
+    if (new Date() > keyExchange.expiresAt) {
+      keyExchange.status = 'failed';
+      await keyExchange.save();
+      logger.warn(`Vulnerable key exchange response failed: Session expired ${sessionId}`);
+      return res.status(400).json({ error: 'Key exchange session expired' });
+    }
+
+    keyExchange.responderPublicKey = publicKey;
+    keyExchange.responderSignature = 'VULNERABLE-NO-SIGNATURE';
+    keyExchange.status = 'completed';
+    await keyExchange.save();
+
+    logger.warn(`⚠️  VULNERABLE key exchange completed: session=${sessionId}`);
+    logger.warn('⚠️  NO SIGNATURE VERIFICATION - ATTACKER CAN REPLACE PUBLIC KEY');
+
+    res.json({
+      message: 'Vulnerable key exchange completed (DEMO ONLY)',
+      initiatorPublicKey: keyExchange.initiatorPublicKey
+    });
+  } catch (error) {
+    logger.error('Error in vulnerable key exchange response:', error);
+    res.status(500).json({ error: 'Failed to respond to vulnerable key exchange' });
   }
 });
 
