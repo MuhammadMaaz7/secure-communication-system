@@ -1,0 +1,8 @@
+# Test coverage reports
+coverage/
+*.lcov
+
+# Test database (if created locally)
+*.db
+*.sqlite
+
