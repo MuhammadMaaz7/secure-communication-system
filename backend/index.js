@@ -30,6 +30,8 @@ const io = socketIo(server, {
 
 connectDB();
 
+const connectedUsers = new Map();
+
 app.use(helmet());
 app.use(cors({
   origin: allowedOrigins,
@@ -37,6 +39,10 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Make io and connectedUsers available to routes
+app.set('io', io);
+app.set('connectedUsers', connectedUsers);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -47,8 +53,6 @@ app.use('/api/files', fileRoutes);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
-
-const connectedUsers = new Map();
 
 io.use((socket, next) => {
   try {
@@ -71,11 +75,14 @@ io.on('connection', (socket) => {
   
   connectedUsers.set(socket.userId, socket.id);
   
-  io.emit('user-status', {
+  const statusUpdate = {
     userId: socket.userId,
     username: socket.username,
     status: 'online'
-  });
+  };
+  
+  logger.info(`Broadcasting online status for ${socket.username}:`, statusUpdate);
+  io.emit('user-status', statusUpdate);
 
   socket.on('new-message', (data) => {
     const recipientSocketId = connectedUsers.get(data.receiverId);
@@ -132,11 +139,14 @@ io.on('connection', (socket) => {
     logger.info(`User disconnected: ${socket.username} (${socket.userId})`);
     connectedUsers.delete(socket.userId);
     
-    io.emit('user-status', {
+    const statusUpdate = {
       userId: socket.userId,
       username: socket.username,
       status: 'offline'
-    });
+    };
+    
+    logger.info(`Broadcasting offline status for ${socket.username}:`, statusUpdate);
+    io.emit('user-status', statusUpdate);
   });
 });
 

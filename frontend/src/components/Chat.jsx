@@ -14,6 +14,8 @@ const Chat = () => {
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -57,36 +59,77 @@ const Chat = () => {
     }
   }, [selectedUser]);
 
-  // Handle real-time events
+  // Handle real-time events - register once on mount
   useEffect(() => {
-    const handleMessage = (data) => {
+    const handleMessage = async (data) => {
       console.log('Message notification:', data);
-      if (selectedUser && data.senderId === selectedUser._id) {
-        loadMessages(selectedUser._id);
+      
+      // Mark message as delivered immediately when received
+      if (data.messageId) {
+        try {
+          await MessageService.markAsDelivered(data.messageId);
+        } catch (error) {
+          console.error('Failed to mark message as delivered:', error);
+        }
       }
+      
+      // Reload messages if viewing conversation with sender
+      setSelectedUser(currentUser => {
+        if (currentUser && data.senderId === currentUser._id) {
+          loadMessages(currentUser._id);
+        }
+        return currentUser;
+      });
     };
 
     const handleUserStatus = (data) => {
-      console.log('User status:', data);
+      console.log('User status update received:', data);
+      setOnlineUsers(prev => {
+        const newSet = new Set(prev);
+        if (data.status === 'online') {
+          console.log(`Adding user ${data.userId} to online users`);
+          newSet.add(data.userId);
+        } else {
+          console.log(`Removing user ${data.userId} from online users`);
+          newSet.delete(data.userId);
+        }
+        console.log('Updated online users:', Array.from(newSet));
+        return newSet;
+      });
     };
 
     const handleFileNotification = (data) => {
       console.log('File notification:', data);
-      if (selectedUser && data.senderId === selectedUser._id) {
-        loadMessages(selectedUser._id);
-      }
+      setSelectedUser(currentUser => {
+        if (currentUser && data.senderId === currentUser._id) {
+          loadMessages(currentUser._id);
+        }
+        return currentUser;
+      });
+    };
+
+    const handleMessageStatusUpdate = (data) => {
+      console.log('Message status update:', data);
+      // Update message status in real-time
+      setMessages(prev => prev.map(msg => 
+        msg._id === data.messageId 
+          ? { ...msg, [data.status]: true, ...(data.status === 'read' ? { delivered: true } : {}) }
+          : msg
+      ));
     };
 
     socketService.on('message-received', handleMessage);
     socketService.on('user-status', handleUserStatus);
     socketService.on('file-notification', handleFileNotification);
+    socketService.on('message-status-update', handleMessageStatusUpdate);
 
     return () => {
       socketService.off('message-received', handleMessage);
       socketService.off('user-status', handleUserStatus);
       socketService.off('file-notification', handleFileNotification);
+      socketService.off('message-status-update', handleMessageStatusUpdate);
     };
-  }, [selectedUser]);
+  }, []); // Empty dependency array - register once on mount
 
   useEffect(() => {
     // Handle incoming key exchange requests
@@ -105,6 +148,15 @@ const Chat = () => {
     try {
       const response = await api.get('/users/list');
       setUsers(response.data.users);
+      
+      // Initialize online users
+      const online = new Set();
+      response.data.users.forEach(u => {
+        if (u.online) {
+          online.add(u._id);
+        }
+      });
+      setOnlineUsers(online);
     } catch (error) {
       console.error('Failed to load users:', error);
     }
@@ -115,6 +167,14 @@ const Chat = () => {
       setLoading(true);
       const msgs = await MessageService.getMessages(userId);
       const filesList = await FileService.getFiles(userId);
+      
+      // Mark received messages as read when viewing the conversation
+      for (const msg of msgs) {
+        if (msg.receiverId === user.userId && !msg.read) {
+          // Mark as read (delivered status should already be set when message was received)
+          await MessageService.markAsRead(msg._id);
+        }
+      }
       
       // Combine messages and files, then sort by timestamp
       const combined = [
@@ -152,20 +212,16 @@ const Chat = () => {
 
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedUser) return;
+    if (!newMessage.trim() || !selectedUser || sendingMessage) return;
 
     const messageToSend = newMessage;
     setNewMessage(''); // Clear input immediately for better UX
+    setSendingMessage(true);
 
     try {
       await MessageService.sendMessage(selectedUser._id, messageToSend);
       
-      socketService.emit('new-message', {
-        receiverId: selectedUser._id,
-        messageId: Date.now(),
-        timestamp: new Date(),
-      });
-
+      // Backend now handles WebSocket notification
       loadMessages(selectedUser._id);
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -176,6 +232,8 @@ const Chat = () => {
       // Show user-friendly error
       const errorMsg = error.message || 'Failed to send message';
       alert(`Error: ${errorMsg}`);
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -239,8 +297,16 @@ const Chat = () => {
                 ...(selectedUser?._id === u._id ? styles.userItemActive : {}),
               }}
             >
-              <div style={styles.avatar}>{u.username[0].toUpperCase()}</div>
-              <span>{u.username}</span>
+              <div style={styles.avatarContainer}>
+                <div style={styles.avatar}>{u.username[0].toUpperCase()}</div>
+                {onlineUsers.has(u._id) && <div style={styles.onlineIndicator} />}
+              </div>
+              <div style={styles.userInfo}>
+                <span>{u.username}</span>
+                {onlineUsers.has(u._id) && (
+                  <span style={styles.onlineText}>online</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -250,7 +316,12 @@ const Chat = () => {
         {selectedUser ? (
           <>
             <div style={styles.chatHeader}>
-              <h3>{selectedUser.username}</h3>
+              <div>
+                <h3 style={{ margin: 0 }}>{selectedUser.username}</h3>
+                {onlineUsers.has(selectedUser._id) && (
+                  <span style={styles.onlineStatus}>online</span>
+                )}
+              </div>
               <div>
                 <input
                   type="file"
@@ -310,6 +381,17 @@ const Chat = () => {
                     </div>
                     <div style={styles.messageTime}>
                       {new Date(item.timestamp).toLocaleTimeString()}
+                      {item.type === 'message' && item.senderId === user.userId && (
+                        <span style={styles.messageStatus}>
+                          {item.read ? (
+                            <span style={styles.readStatus}>✓✓</span>
+                          ) : item.delivered ? (
+                            <span style={styles.deliveredStatus}>✓✓</span>
+                          ) : (
+                            <span style={styles.sentStatus}>✓</span>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -324,11 +406,24 @@ const Chat = () => {
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder="Type a message..."
                 style={styles.input}
+                disabled={sendingMessage}
               />
-              <button type="submit" style={styles.sendBtn}>
-                Send
+              <button 
+                type="submit" 
+                style={{
+                  ...styles.sendBtn,
+                  ...(sendingMessage ? styles.sendBtnDisabled : {})
+                }}
+                disabled={sendingMessage}
+              >
+                {sendingMessage ? 'Sending...' : 'Send'}
               </button>
             </form>
+            {sendingMessage && (
+              <div style={styles.sendingIndicator}>
+                Establishing secure connection...
+              </div>
+            )}
           </>
         ) : (
           <div style={styles.noChat}>
@@ -393,6 +488,9 @@ const styles = {
   userItemActive: {
     backgroundColor: '#34495e',
   },
+  avatarContainer: {
+    position: 'relative',
+  },
   avatar: {
     width: '40px',
     height: '40px',
@@ -402,6 +500,30 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     fontWeight: 'bold',
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: '2px',
+    right: '2px',
+    width: '12px',
+    height: '12px',
+    borderRadius: '50%',
+    backgroundColor: '#27ae60',
+    border: '2px solid #2c3e50',
+  },
+  userInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  onlineText: {
+    fontSize: '0.75rem',
+    color: '#27ae60',
+  },
+  onlineStatus: {
+    fontSize: '0.85rem',
+    color: '#27ae60',
+    marginLeft: '0.5rem',
   },
   chatArea: {
     flex: 1,
@@ -468,6 +590,24 @@ const styles = {
   messageTime: {
     fontSize: '0.75rem',
     opacity: 0.7,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  messageStatus: {
+    marginLeft: '4px',
+    fontSize: '0.85rem',
+  },
+  sentStatus: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  deliveredStatus: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  readStatus: {
+    color: '#00e5ff',
+    fontWeight: 'bold',
+    textShadow: '0 0 2px rgba(0, 0, 0, 0.3)',
   },
   decryptError: {
     color: '#e74c3c',
@@ -493,6 +633,22 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '1rem',
+  },
+  sendBtnDisabled: {
+    backgroundColor: '#95a5a6',
+    cursor: 'not-allowed',
+  },
+  sendingIndicator: {
+    position: 'absolute',
+    bottom: '70px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    backgroundColor: 'rgba(52, 152, 219, 0.9)',
+    color: 'white',
+    padding: '0.5rem 1rem',
+    borderRadius: '4px',
+    fontSize: '0.9rem',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
   },
   noChat: {
     flex: 1,

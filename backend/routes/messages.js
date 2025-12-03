@@ -73,6 +73,21 @@ router.post('/send', authMiddleware, async (req, res) => {
 
     logger.info(`Message sent from ${req.userId} to ${receiverId}, seq: ${sequenceNumber}, nonce: ${nonce.substring(0, 8)}...`);
 
+    // Notify receiver via WebSocket that message was delivered to server
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      const connectedUsers = req.app.get('connectedUsers');
+      const receiverSocketId = connectedUsers?.get(receiverId);
+      
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('message-received', {
+          messageId: message._id.toString(),
+          senderId: req.userId,
+          timestamp: message.timestamp
+        });
+      }
+    }
+
     res.status(201).json({
       message: 'Message sent successfully',
       messageId: message._id,
@@ -123,7 +138,54 @@ router.patch('/:messageId/delivered', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Message not found' });
     }
 
+    // Emit status update via WebSocket (if io is available)
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      const connectedUsers = req.app.get('connectedUsers');
+      const senderSocketId = connectedUsers?.get(message.senderId.toString());
+      
+      if (senderSocketId) {
+        io.to(senderSocketId).emit('message-status-update', {
+          messageId: message._id,
+          status: 'delivered'
+        });
+      }
+    }
+
     res.json({ message: 'Message marked as delivered' });
+  } catch (error) {
+    logger.error('Error updating message:', error);
+    res.status(500).json({ error: 'Failed to update message' });
+  }
+});
+
+router.patch('/:messageId/read', authMiddleware, async (req, res) => {
+  try {
+    const message = await Message.findOneAndUpdate(
+      { _id: req.params.messageId, receiverId: req.userId },
+      { read: true, delivered: true },
+      { new: true }
+    );
+
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    // Emit status update via WebSocket (if io is available)
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      const connectedUsers = req.app.get('connectedUsers');
+      const senderSocketId = connectedUsers?.get(message.senderId.toString());
+      
+      if (senderSocketId) {
+        io.to(senderSocketId).emit('message-status-update', {
+          messageId: message._id,
+          status: 'read'
+        });
+      }
+    }
+
+    res.json({ message: 'Message marked as read' });
   } catch (error) {
     logger.error('Error updating message:', error);
     res.status(500).json({ error: 'Failed to update message' });

@@ -102,4 +102,3 @@ Error: JWT_SECRET is not defined
 2. Check coverage report
 3. Add more tests for uncovered code
 4. Integrate into CI/CD pipeline
-

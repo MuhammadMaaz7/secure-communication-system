@@ -175,4 +175,13 @@ export const MessageService = {
       console.error('Failed to mark message as delivered:', error);
     }
   },
+
+  // Mark message as read
+  async markAsRead(messageId) {
+    try {
+      await api.patch(`/messages/${messageId}/read`);
+    } catch (error) {
+      console.error('Failed to mark message as read:', error);
+    }
+  },
 };

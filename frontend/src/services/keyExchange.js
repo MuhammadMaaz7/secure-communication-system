@@ -307,7 +307,7 @@ export const KeyExchangeProtocol = {
       
       // Wait for responder to complete (with retries)
       let attempts = 0;
-      const maxAttempts = 10;
+      const maxAttempts = 30; // Increased from 10 to 30 seconds
       
       while (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -321,14 +321,17 @@ export const KeyExchangeProtocol = {
             break;
           }
         } catch (error) {
-          console.log(`Attempt ${attempts + 1}/${maxAttempts}: Waiting for key exchange completion...`);
+          if (attempts === 0 || attempts === 5 || attempts === 15) {
+            // Only log at specific intervals to reduce console spam
+            console.log(`Waiting for other user to come online... (${attempts + 1}s)`);
+          }
         }
         
         attempts++;
       }
       
       if (!sessionKey) {
-        throw new Error('Key exchange timeout - responder did not respond');
+        throw new Error('The other user needs to be online to establish a secure connection. Please try again when they are online.');
       }
     }
 

@@ -218,4 +218,3 @@ npm test:coverage     # With coverage
    - Plaintext prevention
    - Encryption verification
    - Access control
-

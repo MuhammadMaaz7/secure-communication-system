@@ -12,7 +12,14 @@ router.get('/list', authMiddleware, async (req, res) => {
       'username publicKey createdAt'
     );
 
-    res.json({ users });
+    // Get online status from connectedUsers
+    const connectedUsers = req.app.get('connectedUsers');
+    const usersWithStatus = users.map(user => ({
+      ...user.toObject(),
+      online: connectedUsers ? connectedUsers.has(user._id.toString()) : false
+    }));
+
+    res.json({ users: usersWithStatus });
   } catch (error) {
     logger.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
