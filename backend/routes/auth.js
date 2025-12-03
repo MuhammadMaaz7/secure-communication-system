@@ -8,20 +8,27 @@ const router = express.Router();
 
 router.post('/register', validateRegistration, async (req, res) => {
   try {
-    const { username, password, publicKey } = req.body;
+    const { username, password, publicKey, email } = req.body;
 
-    logger.info(`Registration attempt for username: ${username}`);
+    logger.info(`Registration attempt for username: ${username}, email: ${email}`);
 
-    const existingUser = await User.findOne({ username });
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
-      logger.warn(`Registration failed: Username already exists - ${username}`);
-      return res.status(400).json({ error: 'Username already exists' });
+      if (existingUser.username === username) {
+        logger.warn(`Registration failed: Username already exists - ${username}`);
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+      if (existingUser.email === email) {
+        logger.warn(`Registration failed: Email already exists - ${email}`);
+        return res.status(400).json({ error: 'Email already exists' });
+      }
     }
 
     const passwordHash = await User.hashPassword(password);
 
     const user = new User({
       username,
+      email,
       passwordHash,
       publicKey
     });
@@ -81,7 +88,9 @@ router.post('/login', validateLogin, async (req, res) => {
       token,
       userId: user._id,
       username: user.username,
-      publicKey: user.publicKey
+      publicKey: user.publicKey,
+      twoFactorEnabled: user.twoFactorEnabled,
+      requiresTwoFactor: user.twoFactorEnabled
     });
   } catch (error) {
     logger.error('Login error:', error);

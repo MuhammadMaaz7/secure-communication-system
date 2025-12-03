@@ -61,3 +61,7 @@ Thumbs.db
 # Production
 /backend/dist
 /frontend/dist
+
+PROJECT_REQUIREMENTS_AUDIT.md
+TEST_IMPLEMENTATION_SUMMARY.md
+backend\tests\QUICK_START.md

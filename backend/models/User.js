@@ -10,6 +10,13 @@ const userSchema = new mongoose.Schema({
     minlength: 3,
     maxlength: 30
   },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true
+  },
   passwordHash: {
     type: String,
     required: true
@@ -17,6 +24,18 @@ const userSchema = new mongoose.Schema({
   publicKey: {
     type: String,
     required: true
+  },
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false
+  },
+  twoFactorCode: {
+    type: String,
+    default: null
+  },
+  twoFactorCodeExpiry: {
+    type: Date,
+    default: null
   },
   createdAt: {
     type: Date,

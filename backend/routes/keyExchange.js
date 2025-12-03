@@ -204,6 +204,25 @@ router.post('/confirm', authMiddleware, async (req, res) => {
   }
 });
 
+// Log invalid signature attempts (for security auditing)
+router.post('/signature-failed', authMiddleware, async (req, res) => {
+  try {
+    const { sessionId, userId, reason } = req.body;
+
+    if (!sessionId || !userId || !reason) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Log the invalid signature attempt
+    logger.warn(`INVALID SIGNATURE DETECTED: Session ${sessionId}, User ${userId}, Reason: ${reason}, Detected by: ${req.userId}`);
+
+    res.json({ message: 'Signature failure logged' });
+  } catch (error) {
+    logger.error('Error logging signature failure:', error);
+    res.status(500).json({ error: 'Failed to log signature failure' });
+  }
+});
+
 // Clean up pending key exchanges for a user (called on logout or key regeneration)
 router.delete('/cleanup', authMiddleware, async (req, res) => {
   try {

@@ -14,6 +14,7 @@ const userRoutes = require('./routes/users');
 const messageRoutes = require('./routes/messages');
 const keyExchangeRoutes = require('./routes/keyExchange');
 const fileRoutes = require('./routes/files');
+const twoFactorRoutes = require('./routes/twoFactor');
 
 const app = express();
 const server = http.createServer(app);
@@ -49,6 +50,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/key-exchange', keyExchangeRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/2fa', twoFactorRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

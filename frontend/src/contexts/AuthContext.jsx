@@ -19,7 +19,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const register = async (username, password) => {
+  const register = async (username, email, password) => {
     try {
       // Check if user is currently logged in
       const currentUser = localStorage.getItem('userData');
@@ -49,6 +49,7 @@ export const AuthProvider = ({ children }) => {
       // Register with server
       const response = await api.post('/auth/register', {
         username,
+        email,
         password,
         publicKey,
       });
@@ -83,12 +84,23 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (username, password) => {
+  const login = async (username, password, skip2FACheck = false) => {
     try {
       const response = await api.post('/auth/login', {
         username,
         password,
       });
+
+      // Check if 2FA is required
+      if (response.data.requiresTwoFactor && !skip2FACheck) {
+        // Send 2FA code
+        const codeResponse = await api.post('/2fa/send-code', { username });
+        return {
+          success: false,
+          requiresTwoFactor: true,
+          maskedEmail: codeResponse.data.email,
+        };
+      }
 
       // Check if keys exist on this device for THIS user
       const userId = response.data.userId;
@@ -114,10 +126,7 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (error) {
       console.error('Login failed:', error);
-      return {
-        success: false,
-        error: error.response?.data?.error || 'Login failed',
-      };
+      throw error;
     }
   };
 

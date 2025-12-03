@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { MessageService } from '../services/messageService';
 import { FileService } from '../services/fileService';
 import socketService from '../services/socketService';
 import api from '../services/api';
+import Toast from './Toast';
 
 const Chat = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -16,8 +19,14 @@ const Chat = () => {
   const [files, setFiles] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+  };
 
   useEffect(() => {
     loadUsers();
@@ -25,7 +34,6 @@ const Chat = () => {
     const token = localStorage.getItem('authToken');
     socketService.connect(token);
 
-    // Check for pending key exchanges every 3 seconds
     const checkPendingExchanges = async () => {
       try {
         const response = await api.get('/key-exchange/pending');
@@ -40,11 +48,10 @@ const Chat = () => {
           }
         }
       } catch (error) {
-        // Silently fail - this is just a background check
+        // Silently fail
       }
     };
 
-    // Check immediately and then every 3 seconds
     checkPendingExchanges();
     const interval = setInterval(checkPendingExchanges, 3000);
 
@@ -59,12 +66,10 @@ const Chat = () => {
     }
   }, [selectedUser]);
 
-  // Handle real-time events - register once on mount
   useEffect(() => {
     const handleMessage = async (data) => {
       console.log('Message notification:', data);
       
-      // Mark message as delivered immediately when received
       if (data.messageId) {
         try {
           await MessageService.markAsDelivered(data.messageId);
@@ -73,7 +78,6 @@ const Chat = () => {
         }
       }
       
-      // Reload messages if viewing conversation with sender
       setSelectedUser(currentUser => {
         if (currentUser && data.senderId === currentUser._id) {
           loadMessages(currentUser._id);
@@ -110,7 +114,6 @@ const Chat = () => {
 
     const handleMessageStatusUpdate = (data) => {
       console.log('Message status update:', data);
-      // Update message status in real-time
       setMessages(prev => prev.map(msg => 
         msg._id === data.messageId 
           ? { ...msg, [data.status]: true, ...(data.status === 'read' ? { delivered: true } : {}) }
@@ -129,12 +132,10 @@ const Chat = () => {
       socketService.off('file-notification', handleFileNotification);
       socketService.off('message-status-update', handleMessageStatusUpdate);
     };
-  }, []); // Empty dependency array - register once on mount
+  }, []);
 
   useEffect(() => {
-    // Handle incoming key exchange requests
     socketService.on('key-exchange-notification', handleKeyExchangeRequest);
-
     return () => {
       socketService.off('key-exchange-notification', handleKeyExchangeRequest);
     };
@@ -149,7 +150,6 @@ const Chat = () => {
       const response = await api.get('/users/list');
       setUsers(response.data.users);
       
-      // Initialize online users
       const online = new Set();
       response.data.users.forEach(u => {
         if (u.online) {
@@ -168,15 +168,12 @@ const Chat = () => {
       const msgs = await MessageService.getMessages(userId);
       const filesList = await FileService.getFiles(userId);
       
-      // Mark received messages as read when viewing the conversation
       for (const msg of msgs) {
         if (msg.receiverId === user.userId && !msg.read) {
-          // Mark as read (delivered status should already be set when message was received)
           await MessageService.markAsRead(msg._id);
         }
       }
       
-      // Combine messages and files, then sort by timestamp
       const combined = [
         ...msgs.map(m => ({ ...m, type: 'message' })),
         ...filesList.map(f => ({ ...f, type: 'file' }))
@@ -184,7 +181,6 @@ const Chat = () => {
       
       combined.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
       
-      // Separate back into messages and files for display
       setMessages(combined.filter(item => item.type === 'message'));
       setFiles(combined.filter(item => item.type === 'file'));
     } catch (error) {
@@ -215,23 +211,18 @@ const Chat = () => {
     if (!newMessage.trim() || !selectedUser || sendingMessage) return;
 
     const messageToSend = newMessage;
-    setNewMessage(''); // Clear input immediately for better UX
+    setNewMessage('');
     setSendingMessage(true);
 
     try {
       await MessageService.sendMessage(selectedUser._id, messageToSend);
-      
-      // Backend now handles WebSocket notification
       loadMessages(selectedUser._id);
     } catch (error) {
       console.error('Failed to send message:', error);
-      
-      // Restore message to input if send failed
       setNewMessage(messageToSend);
       
-      // Show user-friendly error
       const errorMsg = error.message || 'Failed to send message';
-      alert(`Error: ${errorMsg}`);
+      showToast(errorMsg, 'error');
     } finally {
       setSendingMessage(false);
     }
@@ -255,20 +246,17 @@ const Chat = () => {
         fileInputRef.current.value = '';
       }
       
-      // Notify receiver via WebSocket
       socketService.emit('file-uploaded', {
         receiverId: selectedUser._id,
         fileId: result.fileId,
         fileName: selectedFile.name,
       });
       
-      alert(`File "${selectedFile.name}" uploaded successfully`);
-      
-      // Reload to show file
+      showToast(`File "${selectedFile.name}" uploaded successfully`, 'success');
       loadMessages(selectedUser._id);
     } catch (error) {
       console.error('Failed to upload file:', error);
-      alert('Failed to upload file: ' + (error.message || 'Unknown error'));
+      showToast('Failed to upload file: ' + (error.message || 'Unknown error'), 'error');
     } finally {
       setLoading(false);
     }
@@ -279,119 +267,237 @@ const Chat = () => {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.sidebar}>
-        <div style={styles.header}>
-          <h3>E2EE Chat</h3>
-          <p style={styles.username}>{user?.username}</p>
-          <button onClick={logout} style={styles.logoutBtn}>Logout</button>
-        </div>
-        <div style={styles.userList}>
-          <h4 style={styles.userListTitle}>Users</h4>
-          {users.map((u) => (
-            <div
-              key={u._id}
-              onClick={() => setSelectedUser(u)}
-              style={{
-                ...styles.userItem,
-                ...(selectedUser?._id === u._id ? styles.userItemActive : {}),
-              }}
-            >
-              <div style={styles.avatarContainer}>
-                <div style={styles.avatar}>{u.username[0].toUpperCase()}</div>
-                {onlineUsers.has(u._id) && <div style={styles.onlineIndicator} />}
+    <>
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+      <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {/* Sidebar */}
+      <div className={`${sidebarOpen ? 'w-80' : 'w-20'} bg-white border-r border-gray-200 flex flex-col shadow-lg transition-all duration-300`}>
+        {/* Header */}
+        <div className={`${sidebarOpen ? 'p-6' : 'p-4'} bg-gradient-to-br from-primary-600 to-primary-700 text-white transition-all duration-300`}>
+          {sidebarOpen ? (
+            <div className="space-y-4">
+              {/* Brand */}
+              <div>
+                <h2 className="text-2xl font-bold mb-1">SecureChat</h2>
+                <p className="text-primary-100 text-xs">End-to-end encrypted</p>
               </div>
-              <div style={styles.userInfo}>
-                <span>{u.username}</span>
-                {onlineUsers.has(u._id) && (
-                  <span style={styles.onlineText}>online</span>
-                )}
+              
+              {/* User Profile */}
+              <div className="flex items-center gap-3 pt-4 border-t border-white/20">
+                <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-xl font-bold ring-2 ring-white/30">
+                  {user?.username[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-bold text-white truncate">{user?.username}</p>
+                  <p className="text-xs text-primary-100">Your account</p>
+                </div>
               </div>
             </div>
-          ))}
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-xl font-bold ring-2 ring-white/30">
+                {user?.username[0].toUpperCase()}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Users List */}
+        <div className="flex-1 overflow-y-auto">
+          <div className={`${sidebarOpen ? 'p-4' : 'p-2'} transition-all duration-300`}>
+            {sidebarOpen && (
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                Contacts
+              </h3>
+            )}
+            <div className={`${sidebarOpen ? 'space-y-1' : 'space-y-2'}`}>
+              {users.map((u) => (
+                <button
+                  key={u._id}
+                  onClick={() => setSelectedUser(u)}
+                  title={!sidebarOpen ? u.username : ''}
+                  className={`w-full ${sidebarOpen ? 'p-3' : 'p-2'} rounded-xl flex items-center ${sidebarOpen ? 'gap-3' : 'justify-center'} transition-all duration-200 ${
+                    selectedUser?._id === u._id
+                      ? 'bg-primary-50 border-2 border-primary-500 shadow-sm'
+                      : 'hover:bg-gray-50 border-2 border-transparent'
+                  }`}
+                >
+                  <div className="relative flex-shrink-0">
+                    <div className="w-12 h-12 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md">
+                      {u.username[0].toUpperCase()}
+                    </div>
+                    {onlineUsers.has(u._id) && (
+                      <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white"></div>
+                    )}
+                  </div>
+                  {sidebarOpen && (
+                    <div className="flex-1 text-left overflow-hidden">
+                      <p className="font-semibold text-gray-900 truncate">{u.username}</p>
+                      <p className="text-xs text-gray-500">
+                        {onlineUsers.has(u._id) ? 'Online' : 'Offline'}
+                      </p>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Settings & Logout Buttons */}
+        <div className={`${sidebarOpen ? 'p-4' : 'p-2'} border-t border-gray-200 transition-all duration-300 space-y-2`}>
+          <button
+            onClick={() => navigate('/settings')}
+            title={!sidebarOpen ? 'Settings' : ''}
+            className={`w-full ${sidebarOpen ? 'py-2.5 px-4' : 'py-2.5 px-2'} bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors duration-200 flex items-center ${sidebarOpen ? 'justify-center gap-2' : 'justify-center'}`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            {sidebarOpen && <span>Settings</span>}
+          </button>
+          
+          <button
+            onClick={logout}
+            title={!sidebarOpen ? 'Logout' : ''}
+            className={`w-full ${sidebarOpen ? 'py-2.5 px-4' : 'py-2.5 px-2'} bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors duration-200 shadow-sm flex items-center ${sidebarOpen ? 'justify-center gap-2' : 'justify-center'}`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            {sidebarOpen && <span>Logout</span>}
+          </button>
         </div>
       </div>
 
-      <div style={styles.chatArea}>
+      {/* Chat Area */}
+      <div className="flex-1 flex flex-col bg-white">
         {selectedUser ? (
           <>
-            <div style={styles.chatHeader}>
-              <div>
-                <h3 style={{ margin: 0 }}>{selectedUser.username}</h3>
-                {onlineUsers.has(selectedUser._id) && (
-                  <span style={styles.onlineStatus}>online</span>
-                )}
-              </div>
-              <div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileSelect}
-                  style={{ display: 'none' }}
-                />
+            {/* Chat Header */}
+            <div className="px-6 py-4 bg-white border-b border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between">
+                {/* Hamburger Menu */}
                 <button
-                  onClick={() => fileInputRef.current?.click()}
-                  style={styles.fileBtn}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  className="mr-4 p-2 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                  aria-label="Toggle sidebar"
                 >
-                  📎 Attach File
+                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
                 </button>
-                {selectedFile && (
-                  <button onClick={uploadFile} style={styles.uploadBtn}>
-                    Upload {selectedFile.name}
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <div className="w-11 h-11 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold shadow-md">
+                      {selectedUser.username[0].toUpperCase()}
+                    </div>
+                    {onlineUsers.has(selectedUser._id) && (
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-lg">{selectedUser.username}</h3>
+                    <p className="text-xs text-gray-500">
+                      {onlineUsers.has(selectedUser._id) ? '🟢 Online' : '⚫ Offline'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2"
+                  >
+                    📎 Attach
                   </button>
-                )}
+                  {selectedFile && (
+                    <button
+                      onClick={uploadFile}
+                      className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors duration-200 shadow-sm"
+                    >
+                      Upload {selectedFile.name}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div style={styles.messagesContainer}>
-              {loading && <div style={styles.loading}>Loading messages...</div>}
+            {/* Messages Container */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-gray-50 to-white">
+              {loading && (
+                <div className="text-center py-8">
+                  <div className="inline-block w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-gray-500 mt-2">Loading messages...</p>
+                </div>
+              )}
               
-              {/* Combine and display messages and files in chronological order */}
               {[...messages, ...files]
                 .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
                 .map((item, idx) => (
                   <div
                     key={`${item.type}-${idx}`}
-                    style={{
-                      ...styles.message,
-                      ...(item.senderId === user.userId
-                        ? styles.messageSent
-                        : styles.messageReceived),
-                    }}
+                    className={`flex ${item.senderId === user.userId ? 'justify-end' : 'justify-start'} animate-[slide-up_0.3s_ease-out]`}
                   >
-                    <div style={styles.messageContent}>
-                      {item.type === 'message' ? (
-                        <>
-                          {item.text}
-                          {!item.decrypted && (
-                            <span style={styles.decryptError}> ⚠️</span>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          📎 {item.fileName} ({Math.round(item.fileSize / 1024)}KB)
-                          <button
-                            onClick={() => FileService.downloadFile(item._id, item.senderId === user.userId ? item.receiverId : item.senderId)}
-                            style={styles.downloadBtn}
-                          >
-                            Download
-                          </button>
-                        </>
-                      )}
-                    </div>
-                    <div style={styles.messageTime}>
-                      {new Date(item.timestamp).toLocaleTimeString()}
-                      {item.type === 'message' && item.senderId === user.userId && (
-                        <span style={styles.messageStatus}>
-                          {item.read ? (
-                            <span style={styles.readStatus}>✓✓</span>
-                          ) : item.delivered ? (
-                            <span style={styles.deliveredStatus}>✓✓</span>
-                          ) : (
-                            <span style={styles.sentStatus}>✓</span>
-                          )}
-                        </span>
-                      )}
+                    <div
+                      className={`max-w-[70%] px-4 py-3 rounded-2xl shadow-sm ${
+                        item.senderId === user.userId
+                          ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-br-sm'
+                          : 'bg-white border border-gray-200 text-gray-900 rounded-bl-sm'
+                      }`}
+                    >
+                      <div className="break-words">
+                        {item.type === 'message' ? (
+                          <>
+                            <p className="text-sm leading-relaxed">{item.text}</p>
+                            {!item.decrypted && (
+                              <span className="text-red-300 text-xs"> ⚠️ Decryption failed</span>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">📎</span>
+                            <div className="flex-1">
+                              <p className="font-medium">{item.fileName}</p>
+                              <p className="text-xs opacity-70">{Math.round(item.fileSize / 1024)}KB</p>
+                            </div>
+                            <button
+                              onClick={() => FileService.downloadFile(item._id, item.senderId === user.userId ? item.receiverId : item.senderId)}
+                              className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium transition-colors"
+                            >
+                              Download
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className={`flex items-center gap-1.5 mt-1 text-xs ${
+                        item.senderId === user.userId ? 'text-primary-100' : 'text-gray-500'
+                      }`}>
+                        <span>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        {item.type === 'message' && item.senderId === user.userId && (
+                          <span className="ml-1">
+                            {item.read ? (
+                              <span className="text-cyan-300 font-bold drop-shadow-sm">✓✓</span>
+                            ) : item.delivered ? (
+                              <span className="opacity-70">✓✓</span>
+                            ) : (
+                              <span className="opacity-70">✓</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -399,275 +505,57 @@ const Chat = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            <form onSubmit={sendMessage} style={styles.inputArea}>
-              <input
-                type="text"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder="Type a message..."
-                style={styles.input}
-                disabled={sendingMessage}
-              />
-              <button 
-                type="submit" 
-                style={{
-                  ...styles.sendBtn,
-                  ...(sendingMessage ? styles.sendBtnDisabled : {})
-                }}
-                disabled={sendingMessage}
-              >
-                {sendingMessage ? 'Sending...' : 'Send'}
-              </button>
-            </form>
-            {sendingMessage && (
-              <div style={styles.sendingIndicator}>
-                Establishing secure connection...
-              </div>
-            )}
+            {/* Input Area */}
+            <div className="p-4 bg-white border-t border-gray-200">
+              {sendingMessage && (
+                <div className="mb-3 px-4 py-2 bg-primary-50 border border-primary-200 rounded-lg text-primary-700 text-sm flex items-center gap-2 animate-[fade-in_0.3s_ease-in-out]">
+                  <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Establishing secure connection...</span>
+                </div>
+              )}
+              <form onSubmit={sendMessage} className="flex gap-3">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type a message..."
+                  disabled={sendingMessage}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                />
+                <button
+                  type="submit"
+                  disabled={sendingMessage || !newMessage.trim()}
+                  className="px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white rounded-xl font-medium transition-all duration-200 shadow-md hover:shadow-lg disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                  {sendingMessage ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    'Send'
+                  )}
+                </button>
+              </form>
+            </div>
           </>
         ) : (
-          <div style={styles.noChat}>
-            <h3>Select a user to start chatting</h3>
-            <p>All messages are end-to-end encrypted</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+            <div className="w-24 h-24 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl flex items-center justify-center mb-6 shadow-xl">
+              <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">Welcome to SecureChat</h3>
+            <p className="text-gray-500 max-w-md">
+              Select a contact from the sidebar to start a secure, end-to-end encrypted conversation
+            </p>
+            <div className="mt-8 text-sm text-gray-400">
+              <p>All messages are encrypted</p>
+            </div>
           </div>
         )}
       </div>
     </div>
+    </>
   );
-};
-
-const styles = {
-  container: {
-    display: 'flex',
-    height: '100vh',
-    backgroundColor: '#f5f5f5',
-  },
-  sidebar: {
-    width: '300px',
-    backgroundColor: '#2c3e50',
-    color: 'white',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  header: {
-    padding: '1rem',
-    borderBottom: '1px solid #34495e',
-  },
-  username: {
-    fontSize: '0.9rem',
-    color: '#bdc3c7',
-    margin: '0.5rem 0',
-  },
-  logoutBtn: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#e74c3c',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    width: '100%',
-  },
-  userList: {
-    flex: 1,
-    overflowY: 'auto',
-  },
-  userListTitle: {
-    padding: '1rem',
-    margin: 0,
-    fontSize: '0.9rem',
-    color: '#bdc3c7',
-  },
-  userItem: {
-    padding: '1rem',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-    transition: 'background-color 0.2s',
-  },
-  userItemActive: {
-    backgroundColor: '#34495e',
-  },
-  avatarContainer: {
-    position: 'relative',
-  },
-  avatar: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    backgroundColor: '#3498db',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 'bold',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: '2px',
-    right: '2px',
-    width: '12px',
-    height: '12px',
-    borderRadius: '50%',
-    backgroundColor: '#27ae60',
-    border: '2px solid #2c3e50',
-  },
-  userInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-  },
-  onlineText: {
-    fontSize: '0.75rem',
-    color: '#27ae60',
-  },
-  onlineStatus: {
-    fontSize: '0.85rem',
-    color: '#27ae60',
-    marginLeft: '0.5rem',
-  },
-  chatArea: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    backgroundColor: 'white',
-  },
-  chatHeader: {
-    padding: '1rem',
-    borderBottom: '1px solid #ddd',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  fileBtn: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#3498db',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    marginRight: '0.5rem',
-  },
-  uploadBtn: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#27ae60',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
-  messagesContainer: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '1rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-  },
-  loading: {
-    textAlign: 'center',
-    color: '#666',
-    padding: '1rem',
-  },
-  message: {
-    maxWidth: '70%',
-    padding: '0.75rem',
-    borderRadius: '8px',
-    wordWrap: 'break-word',
-  },
-  messageSent: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#3498db',
-    color: 'white',
-  },
-  messageReceived: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#ecf0f1',
-    color: '#2c3e50',
-  },
-  messageContent: {
-    marginBottom: '0.25rem',
-  },
-  messageTime: {
-    fontSize: '0.75rem',
-    opacity: 0.7,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-  },
-  messageStatus: {
-    marginLeft: '4px',
-    fontSize: '0.85rem',
-  },
-  sentStatus: {
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  deliveredStatus: {
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  readStatus: {
-    color: '#00e5ff',
-    fontWeight: 'bold',
-    textShadow: '0 0 2px rgba(0, 0, 0, 0.3)',
-  },
-  decryptError: {
-    color: '#e74c3c',
-  },
-  inputArea: {
-    display: 'flex',
-    padding: '1rem',
-    borderTop: '1px solid #ddd',
-    gap: '0.5rem',
-  },
-  input: {
-    flex: 1,
-    padding: '0.75rem',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
-    fontSize: '1rem',
-  },
-  sendBtn: {
-    padding: '0.75rem 1.5rem',
-    backgroundColor: '#3498db',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '1rem',
-  },
-  sendBtnDisabled: {
-    backgroundColor: '#95a5a6',
-    cursor: 'not-allowed',
-  },
-  sendingIndicator: {
-    position: 'absolute',
-    bottom: '70px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    backgroundColor: 'rgba(52, 152, 219, 0.9)',
-    color: 'white',
-    padding: '0.5rem 1rem',
-    borderRadius: '4px',
-    fontSize: '0.9rem',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-  },
-  noChat: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    color: '#666',
-  },
-  downloadBtn: {
-    marginLeft: '10px',
-    padding: '4px 8px',
-    backgroundColor: '#27ae60',
-    color: 'white',
-    border: 'none',
-    borderRadius: '3px',
-    cursor: 'pointer',
-    fontSize: '0.85rem',
-  },
 };
 
 export default Chat;

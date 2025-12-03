@@ -97,6 +97,16 @@ export const KeyExchangeProtocol = {
       console.log('Signature verification result:', isValid);
       
       if (!isValid) {
+        // Log invalid signature to server for security audit
+        try {
+          await api.post('/key-exchange/signature-failed', {
+            sessionId,
+            userId: initiatorId,
+            reason: 'Invalid initiator signature - possible MITM attack'
+          });
+        } catch (logError) {
+          console.error('Failed to log signature failure:', logError);
+        }
         throw new Error('Invalid initiator signature - possible MITM attack');
       }
       
@@ -186,6 +196,16 @@ export const KeyExchangeProtocol = {
       );
       
       if (!isValid) {
+        // Log invalid signature to server for security audit
+        try {
+          await api.post('/key-exchange/signature-failed', {
+            sessionId,
+            userId: responderId,
+            reason: 'Invalid responder signature - possible MITM attack'
+          });
+        } catch (logError) {
+          console.error('Failed to log signature failure:', logError);
+        }
         throw new Error('Invalid responder signature - possible MITM attack');
       }
       
